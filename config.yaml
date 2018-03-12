@@ -1,0 +1,4 @@
+www.example.com:
+        url: "https://www.example.com"
+        username: "user"
+        password: "pass"
