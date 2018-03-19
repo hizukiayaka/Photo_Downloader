@@ -3,15 +3,14 @@
 
 from bs4 import BeautifulSoup
 from urllib.parse import urlparse, urlencode
-from twisted.web.client import readBody
 import re
 
 def the_raw_download_button(title):
     return title and re.compile("RAW").search(title)
 
-class DolphinAlbum:
+class DolphinSite:
     def __init__(self, config):
-        self.url = config.get('url')
+        self.site_url = config.get('url')
         self.username = config.get('username')
         self.password = config.get('password')
 
@@ -29,31 +28,28 @@ class DolphinAlbum:
     
     def isValidUser(self, response):
         soup = BeautifulSoup(response, 'html.parser')
-        profile = soup.find(class_='sys-sm-profile')
-        user_name = profile.find(class_="sys-smp-title")
+        try:
+            profile = soup.find(class_='sys-sm-profile')
+            user_name = profile.find(class_="sys-smp-title")
+        except AttributeError:
+            return False
 
         if re.compile('Join or Login').search(user_name.string):
-            print("not login")
-            with open('result.html', "wb") as f:
-                f.write(response)
             return False
-        else:
-            print("login as user: {}".format(user_name.string))
 
         return True
 
-    def cbIsValidUser(self, response):
-        d = readBody(response)
-        d.addCallback(self.isValidUser)
-        return d
-
-    def postLoginUser(self, response):
-        soup = BeautifulSoup(response, 'html.parser')
-        csrf_form = soup.find("input", attrs={"name": "csrf_token"})
-        csrf_token = csrf_form.attrs.get('value')
+    def generateLoginData(self, body):
+        soup = BeautifulSoup(body, 'html.parser')
+        try:
+            csrf_form = soup.find("input", attrs={"name": "csrf_token"})
+            csrf_token = csrf_form.attrs.get('value')
+        except AttributeError:
+            csrf_form = ""
+            csrf_token = ""
 
         values = {
-                'relocate': 'https://www.insoler.com/',
+                'relocate': self.site_url,
                 'rememberMe': 'on',
                 'csrf_token': csrf_token,
                 'ID': self.username,
@@ -63,13 +59,9 @@ class DolphinAlbum:
         query = urlencode(values, doseq=True)
         return query
 
-    def cbPostLoginUser(self, response):
-        d = readBody(response)
-        d.addCallback(self.postLoginUser)
-        return d
-
-    def memberURL(self, url):
-        req = urlparse(url)
+    # TODO
+    def memberURL(self):
+        req = urlparse(self.site_url)
         req = req._replace(path='/member.php')
 
         return bytes(req.geturl(), 'ascii')
@@ -77,6 +69,7 @@ class DolphinAlbum:
     def extractPhotoPages(self, soup):
         result_b = soup.find(class_="result_block")
         files_res = result_b.find_all(class_="sys_file_search_title")
+
         p_list = []
         for i in files_res:
             photo_name = i.string
@@ -85,20 +78,15 @@ class DolphinAlbum:
 
         return p_list
 
-    def parseAlbumPage(self, response):
-        soup = BeautifulSoup(response, 'html.parser')
+    def parseAlbumPage(self, body):
+        soup = BeautifulSoup(body, 'html.parser')
         page_c1 = soup.find(id="page_column_1")
         the_title = page_c1.find(class_="dbTitle")
 
         return self.extractPhotoPages(soup)
 
-    def cbRequestAlbumPage(self, response):
-        d = readBody(response)
-        d.addCallback(self.parseAlbumPage)
-        return d
-
-    def parseDlFromPhotoPage(self, response):
-        soup = BeautifulSoup(response, 'html.parser')
+    def extractLinkFromPhotoPage(self, body):
+        soup = BeautifulSoup(body, 'html.parser')
 
         button = soup.find("button", class_="menuLink",
                            title=the_raw_download_button)
@@ -107,9 +95,11 @@ class DolphinAlbum:
             photo_url = re.findall("([^']*)'", photo_url)[1]
             return photo_url
 
-        return None
-   
-    def cbGetPhotoDlLink(self, response):
-        d = readBody(response)
-        d.addCallback(self.parseDlFromPhotoPage)
-        return d
+        raise Exception
+
+    def generatePhotoDLInfo(self, url, parent_url):
+        return { 'url': url,
+                'referer': parent_url,
+                'user': self.username,
+                'pass': self.password,
+                }
