@@ -8,9 +8,9 @@ from twisted.web.client import HTTPConnectionPool
 from urllib.parse import urlparse
 from http.cookiejar import LWPCookieJar
 
-from album_network import AlbumOperation, cbShutdown
 from config import read_config
 from dolphin_site import DolphinSite
+from album_http import HttpAlbumOperation, cbShutdown
 
 def main():
     if len(sys.argv) > 1:
@@ -40,10 +40,11 @@ def main():
     agent = CookieAgent(Agent(reactor, pool=pool), cookieJar)
 
     site = DolphinSite(config.get(netloc))
-    ablum = AlbumOperation(site, agent)
-    ablum.startAuth()
+    ablum = HttpAlbumOperation(site, agent, save_path)
 
-    ablum.startDownloadAlbum(url)
+    d = ablum.DownloadRestrictedAlbum(url)
+    # FIXME: it doesn't work
+    #d.addCallback(cbShutdown)
 
     reactor.run()
 
