@@ -51,7 +51,9 @@ class HttpAlbumOperation(object):
         d = self.agent.request(b'POST', self.site.memberURL(),
                 Headers(
                     {'Content-Type':
-                    ['application/x-www-form-urlencoded']}
+                    ['application/x-www-form-urlencoded'],
+                    'Accept-Language':
+                    ['en-US,en', 'q=0.5']}
                     ),
                 body
                 )
@@ -60,25 +62,39 @@ class HttpAlbumOperation(object):
         return d
 
     def cbPrepareLocalAlbum(self, album_data):
-        album_name = Path(album_data.get('name'))
-        album_dir = self.dl_path.joinpath(album_name)
-        try:
-            album_dir.mkdir()
-        except FileExistsError:
-            pass
-        except FileNotFoundError as e:
-            log.err("can't create the directory {}".format(album_dir))
-            raise e
+        a_name = album_data.get('name')
+
+        album_path = Path(a_name)
+        album_dir = self.dl_path.joinpath(album_path)
+
+        for i in range(4, len(album_data.get('name')), 4):
+            try:
+                album_dir.mkdir()
+            except FileExistsError:
+                break
+            except FileNotFoundError as e:
+                log.err("can't create the directory {}".format(album_dir))
+                raise
+            except OSError:
+                s_name = a_name[:len(a_name) - i]
+                s_name += "_$"
+                album_dir = self.dl_path.joinpath(s_name)
+                continue
+            break
 
         self.album_dl_path = album_dir
 
         return album_data.get('photos')
 
+
+    def ebSiteParseAlbum(self, failure):
+        raise Exception("can't parse the request URL as an album")
+
     def cbReqAlbumPage(self, response):
         d = readBody(response)
 
         d.addCallback(self.site.parseAlbumPage)
-        d.addErrback(log.err)
+        d.addErrback(self.ebSiteParseAlbum)
         d.addCallback(self.cbPrepareLocalAlbum)
         d.addErrback(log.err)
 
@@ -147,10 +163,14 @@ class HttpAlbumOperation(object):
         d.addCallback(self.cbUserLogin)
         return d
 
+    def ebDownloadAlbum(self, failure):
+        log.err(failure)
+        raise Exception("can't handle the request URL")
+
     def startDownloadAlbum(self, url):
         d = self.agent.request(b'GET', self.site.rewriteURL(url))
         d.addCallback(self.cbReqAlbumPage)
-        d.addErrback(log.err)
+        d.addErrback(self.ebDownloadAlbum)
         d.addCallback(self.cbReqPhotoPage)
         d.addErrback(log.err)
 
@@ -161,7 +181,10 @@ class HttpAlbumOperation(object):
 
     def DownloadRestrictedAlbum(self, url):
         auth = self.startUserLogin()
-        return auth.addCallback(self.cbPassAuth, *[url])
+        auth.addCallback(self.cbPassAuth, *[url])
+        auth.addErrback(log.err)
+
+        return auth
 
 def cbShutdown(ignored):
     reactor.stop()

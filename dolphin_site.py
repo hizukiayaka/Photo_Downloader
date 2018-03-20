@@ -39,7 +39,7 @@ class DolphinSite(object):
             profile = soup.find(class_='sys-sm-profile')
             user_name = profile.find(class_="sys-smp-title")
         except AttributeError:
-            return False
+            raise Exception("can't find user profile")
 
         if re.compile('Join or Login').search(user_name.string):
             return False
@@ -72,10 +72,9 @@ class DolphinSite(object):
             files_res = result_b.find_all(class_="sys_file_search_title")
         except AttributeError as e:
             print("invalid search request for the album")
-            raise e
+            raise
         if len(files_res) == 0:
-            print("No photo in this ablum")
-            raise Exception
+            raise Exception("No photo in this album")
 
         p_list = []
         for i in files_res:
@@ -87,10 +86,19 @@ class DolphinSite(object):
 
     def parseAlbumPage(self, body):
         soup = BeautifulSoup(body, 'html.parser')
-        page_c1 = soup.find(id="page_column_1")
-        title_tag = page_c1.find(class_="dbTitle")
-        title_value = title_tag.contents[0]
-        ablum_name = re.findall('"([^"]*)"', title_value)[0]
+
+        try:
+            page_c1 = soup.find(id="page_column_1")
+            title_tag = page_c1.find(class_="dbTitle")
+            title_value = title_tag.contents[0]
+
+            ablum_name = re.findall('"([^"]*)"', title_value)[0]
+        except AttributeError as e:
+            print("The request url doesn't match the site settings")
+            raise
+        except IndexError as e:
+            print("The request url is an invalid album page")
+            raise
 
         photo_pages = self.extractPhotoPages(soup)
 
@@ -111,7 +119,7 @@ class DolphinSite(object):
             photo_url = bytes(photo_url, 'ascii')
             return {'name': name, 'url': photo_url}
 
-        raise Exception
+        raise Exception("No download link")
 
     def generatePhotoDLInfo(self, photo_data, parent_url):
         return { 'url': photo_data.get('url'),

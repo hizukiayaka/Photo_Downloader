@@ -36,7 +36,8 @@ def main():
     cookieJar = LWPCookieJar('photo.cookie')
     cookieJar.load()
 
-    pool = HTTPConnectionPool(reactor)
+    pool = HTTPConnectionPool(reactor, persistent=True)
+    pool.maxPersistentPerHost = 15
     agent = CookieAgent(Agent(reactor, pool=pool), cookieJar)
 
     site = DolphinSite(config.get(netloc))
