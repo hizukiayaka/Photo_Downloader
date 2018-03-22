@@ -9,6 +9,7 @@ from twisted.web.iweb import IBodyProducer
 from urllib.parse import urlparse
 from zope.interface import implementer
 from pathlib import Path
+from album_operation import AlbumOperation
 
 @implementer(IBodyProducer)
 class BytesProducer(object):
@@ -25,30 +26,28 @@ class BytesProducer(object):
     def stopProducing(self):
         pass
 
-class HttpAlbumOperation(object):
+class HttpAlbumOperation(AlbumOperation):
     def __init__(self, site, agent, dl_path):
-        self.site = site
-        self.agent = agent
-        self.dl_path = Path(dl_path)
-        self.album_dl_path = self.dl_path
+        AlbumOperation.__init__(self, site, dl_path)
+        self._agent = agent
 
-    def cbUpdateCookie(self, result):
+    def _cbUpdateCookie(self, result):
         if result:
-            self.agent.cookieJar.save()
+            self._agent.cookieJar.save()
 
         return
 
-    def cbBypassLoginMsg(self, response):
-        d = self.agent.request(b'GET', self.site.memberURL())
+    def _cbBypassLoginMsg(self, response):
+        d = self._agent.request(b'GET', self._site.memberURL())
         d.addCallback(readBody)
-        d.addCallback(self.site.isValidUser)
-        d.addCallback(self.cbUpdateCookie)
+        d.addCallback(self._site.isValidUser)
+        d.addCallback(self._cbUpdateCookie)
         return d
 
-    def cbPostLoginRequest(self, query):
+    def _cbPostLoginRequest(self, query):
         body = BytesProducer(query)
 
-        d = self.agent.request(b'POST', self.site.memberURL(),
+        d = self._agent.request(b'POST', self._site.memberURL(),
                 Headers(
                     {'Content-Type':
                     ['application/x-www-form-urlencoded'],
@@ -57,99 +56,60 @@ class HttpAlbumOperation(object):
                     ),
                 body
                 )
-        d.addCallback(self.cbBypassLoginMsg)
+        d.addCallback(self._cbBypassLoginMsg)
 
         return d
 
-    def cbPrepareLocalAlbum(self, album_data):
-        a_name = album_data.get('name')
-
-        album_path = Path(a_name)
-        album_dir = self.dl_path.joinpath(album_path)
-
-        for i in range(4, len(album_data.get('name')), 4):
-            try:
-                album_dir.mkdir()
-            except FileExistsError:
-                break
-            except FileNotFoundError as e:
-                log.err("can't create the directory {}".format(album_dir))
-                raise
-            except OSError:
-                s_name = a_name[:len(a_name) - i]
-                s_name += "_$"
-                album_dir = self.dl_path.joinpath(s_name)
-                continue
-            break
-
-        self.album_dl_path = album_dir
-
-        return album_data.get('photos')
-
-
-    def ebSiteParseAlbum(self, failure):
-        raise Exception("can't parse the request URL as an album")
-
-    def cbReqAlbumPage(self, response):
+    def _cbReqAlbumPage(self, response):
         d = readBody(response)
 
-        d.addCallback(self.site.parseAlbumPage)
-        d.addErrback(self.ebSiteParseAlbum)
-        d.addCallback(self.cbPrepareLocalAlbum)
-        d.addErrback(log.err)
+        d.addCallback(self._site.parseAlbumPage)
+        d.addErrback(self._ebSiteParseAlbum)
+        d.addCallback(self._cbPrepareLocalAlbum)
 
         return d
 
-    def cbGetPhotoDlLink(self, response, view_url):
+    def _cbGetPhotoDlLink(self, response, view_url):
         d = readBody(response)
 
-        d.addCallback(self.site.extractLinkFromPhotoPage)
+        d.addCallback(self._site.extractLinkFromPhotoPage)
         d.addErrback(log.err)
-        d.addCallback(self.site.generatePhotoDLInfo, *[view_url])
+        d.addCallback(self._site.generatePhotoDLInfo, *[view_url])
         d.addErrback(log.err)
 
         return d
 
-    def cbDownloadComplete(self, body, file_name):
-        p = self.album_dl_path.joinpath(file_name)
-        with p.open(mode='w+b') as f:
-            f.write(body)
-        print("Download Complete")
-
-    def ebDownloadError(failure):
-        print("Download failure")
-
-    def cbDownloadPhoto(self, link_data):
-        d = self.agent.request(b'GET', link_data.get('url'),
+    def _cbDownloadPhoto(self, link_data):
+        d = self._agent.request(b'GET', link_data.get('url'),
                 Headers({'Referer': link_data.get('referer') })
                 )
         d.addCallback(readBody)
-        d.addCallback(self.cbDownloadComplete, *[link_data.get('file_name')])
+        d.addCallback(self._cbDownloadComplete, *[link_data.get('file_name')])
 
         return d
 
-    def cbReqPhotoPage(self, photo_list):
+    def _cbReqPhotoPage(self, photo_list):
         dl = []
         for i in photo_list:
-            d = self.agent.request(b'GET', bytes(i.get('url'), 'ascii'))
-            d.addCallback(self.cbGetPhotoDlLink, *[i.get('url')])
+            d = self._agent.request(b'GET', bytes(i.get('url'), 'ascii'))
+            d.addCallback(self._cbGetPhotoDlLink, *[i.get('url')])
             d.addErrback(log.err)
-            d.addCallback(self.cbDownloadPhoto)
+            d.addCallback(self._cbDownloadPhoto)
             d.addErrback(log.err)
             dl.append(d)
         deferreds = DeferredList(dl, consumeErrors=True)
         # FIXME
-        deferreds.addCallback(cbShutdown)
+        #deferreds.addCallback(cbShutdown)
 
         return deferreds
 
-    def cbUserLogin(self, login_state):
+    def _cbUserLogin(self, login_state):
         if login_state is not True:
-            d = self.agent.request(b'GET', self.site.memberURL())
+            d = self._agent.request(b'GET', self._site.memberURL())
             d.addCallback(readBody)
-            d.addCallback(self.site.generateLoginForm)
+            d.addCallback(self._site.generateLoginForm)
             d.addErrback(log.err)
-            d.addCallback(self.cbPostLoginRequest)
+            d.addCallback(self._cbPostLoginRequest)
             d.addErrback(log.err)
 
             return d
@@ -157,34 +117,20 @@ class HttpAlbumOperation(object):
         return login_state
 
     def startUserLogin(self):
-        d = self.agent.request(b'GET', self.site.memberURL())
+        d = self._agent.request(b'GET', self._site.memberURL())
         d.addCallback(readBody)
-        d.addCallback(self.site.isValidUser)
-        d.addCallback(self.cbUserLogin)
+        d.addCallback(self._site.isValidUser)
+        d.addCallback(self._cbUserLogin)
         return d
 
-    def ebDownloadAlbum(self, failure):
-        log.err(failure)
-        raise Exception("can't handle the request URL")
-
     def startDownloadAlbum(self, url):
-        d = self.agent.request(b'GET', self.site.rewriteURL(url))
-        d.addCallback(self.cbReqAlbumPage)
-        d.addErrback(self.ebDownloadAlbum)
-        d.addCallback(self.cbReqPhotoPage)
+        d = self._agent.request(b'GET', self._site.rewriteURL(url))
+        d.addCallback(self._cbReqAlbumPage)
+        d.addErrback(self._ebDownloadAlbum)
+        d.addCallback(self._cbReqPhotoPage)
         d.addErrback(log.err)
 
         return d
-
-    def cbPassAuth(self, auth_result, url):
-        return self.startDownloadAlbum(url)
-
-    def DownloadRestrictedAlbum(self, url):
-        auth = self.startUserLogin()
-        auth.addCallback(self.cbPassAuth, *[url])
-        auth.addErrback(log.err)
-
-        return auth
 
 def cbShutdown(ignored):
     reactor.stop()

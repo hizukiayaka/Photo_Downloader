@@ -10,7 +10,13 @@ from http.cookiejar import LWPCookieJar
 
 from config import read_config
 from dolphin_site import DolphinSite
-from album_http import HttpAlbumOperation, cbShutdown
+from album_http import HttpAlbumOperation
+
+def cbShutdown(ignored):
+    reactor.stop()
+
+def cbFinish(deferreds):
+    deferreds.addCallBack(cbShutdown)
 
 def main():
     if len(sys.argv) > 1:
@@ -45,7 +51,7 @@ def main():
 
     d = ablum.DownloadRestrictedAlbum(url)
     # FIXME: it doesn't work
-    #d.addCallback(cbShutdown)
+    d.addCallback(cbFinish)
 
     reactor.run()
 
