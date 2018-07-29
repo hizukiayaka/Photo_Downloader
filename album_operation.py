@@ -3,6 +3,7 @@ from twisted.python import log, compat
 
 from urllib.parse import urlparse
 from pathlib import Path
+import re
 
 class AlbumOperation(object):
     def __init__(self, site, dl_path):
@@ -12,6 +13,8 @@ class AlbumOperation(object):
 
     def _cbPrepareLocalAlbum(self, album_data):
         a_name = album_data.get('name')
+        # filter out safe char here
+        a_name = re.sub(r'[<>:"/\\|]{1,}', r' ', a_name)
 
         album_path = Path(a_name)
         album_dir = self._dl_path.joinpath(album_path)

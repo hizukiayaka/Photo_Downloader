@@ -51,6 +51,8 @@ class HttpAlbumOperation(AlbumOperation):
                 Headers(
                     {'Content-Type':
                     ['application/x-www-form-urlencoded'],
+                    # The future cookie would apply the language
+                    # setting here
                     'Accept-Language':
                     ['en-US,en', 'q=0.5']}
                     ),
