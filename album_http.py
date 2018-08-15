@@ -91,17 +91,19 @@ class HttpAlbumOperation(AlbumOperation):
         return d
 
     def _cbReqPhotoPage(self, photo_list):
+        def photoConnectLost(message, url):
+            log.err(message)
+            raise Exception("can't access {0!s}".format(url))
+
         dl = []
         for i in photo_list:
             d = self._agent.request(b'GET', bytes(i.get('url'), 'ascii'))
             d.addCallback(self._cbGetPhotoDlLink, *[i.get('url')])
-            d.addErrback(log.err)
+            d.addErrback(photoConnectLost, *[i.get('url')])
             d.addCallback(self._cbDownloadPhoto)
             d.addErrback(log.err)
             dl.append(d)
         deferreds = DeferredList(dl, consumeErrors=True)
-        # FIXME
-        #deferreds.addCallback(cbShutdown)
 
         return deferreds
 
@@ -133,6 +135,3 @@ class HttpAlbumOperation(AlbumOperation):
         d.addErrback(log.err)
 
         return d
-
-def cbShutdown(ignored):
-    reactor.stop()
