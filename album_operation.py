@@ -21,7 +21,7 @@ class AlbumOperation(object):
 
         for i in range(4, len(album_data.get('name')), 4):
             try:
-                album_dir.mkdir()
+                album_dir.mkdir(parents=True)
             except FileExistsError:
                 break
             except FileNotFoundError as e:
