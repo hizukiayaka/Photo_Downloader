@@ -103,9 +103,9 @@ class HttpAlbumOperation(AlbumOperation):
             d.addCallback(self._cbDownloadPhoto)
             d.addErrback(log.err)
             dl.append(d)
-        deferreds = DeferredList(dl, consumeErrors=True)
-
-        return deferreds
+            if len(dl) > 16:
+                deferreds = DeferredList(dl, consumeErrors=True)
+                dl = []
 
     def _cbUserLogin(self, login_state):
         if login_state is not True:
