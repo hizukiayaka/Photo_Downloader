@@ -1,6 +1,6 @@
 #!/bin/env python3
 from twisted.internet import reactor
-from twisted.internet.defer import DeferredList, succeed
+from twisted.internet.defer import DeferredList, succeed, DeferredSemaphore
 from twisted.python import log, compat
 from twisted.web.client import readBody, HTTPDownloader
 from twisted.web.http_headers import Headers
@@ -96,16 +96,17 @@ class HttpAlbumOperation(AlbumOperation):
             raise Exception("can't access {0!s}".format(url))
 
         dl = []
+        sem = DeferredSemaphore(20)
         for i in photo_list:
-            d = self._agent.request(b'GET', bytes(i.get('url'), 'ascii'))
+            d = sem.run(self._agent.request, b'GET', bytes(i.get('url'), 'ascii'))
             d.addCallback(self._cbGetPhotoDlLink, *[i.get('url')])
             d.addErrback(photoConnectLost, *[i.get('url')])
             d.addCallback(self._cbDownloadPhoto)
             d.addErrback(log.err)
             dl.append(d)
-            if len(dl) > 16:
-                deferreds = DeferredList(dl, consumeErrors=True)
-                dl = []
+        deferreds = DeferredList(dl, consumeErrors=True)
+
+        return deferreds
 
     def _cbUserLogin(self, login_state):
         if login_state is not True:
