@@ -1,6 +1,6 @@
 #!/bin/env python3
 
-from twisted.internet import reactor
+from twisted.internet import reactor, task
 from twisted.internet.defer import DeferredList
 from twisted.python import log, compat
 from twisted.web.client import Agent, CookieAgent
@@ -31,11 +31,11 @@ def processULR(agent, url, save_path):
     if len(o[1]):
         netloc = o[1]
     else:
-        return
+        return None
 
     config = read_config()
     if config.get(netloc) is None:
-        return
+        return None
    
     site = DolphinSite(config.get(netloc))
     ablum = HttpAlbumOperation(site, agent, save_path)
@@ -44,6 +44,11 @@ def processULR(agent, url, save_path):
 
     return d
 
+def processULRs(agent, urls, save_path):
+    for i in urls:
+        if i is not None:
+            yield processULR(agent, i, save_path)
+
 def main():
     parser = ArgumentParser()
     parser.add_argument('url', nargs='?', default=None, help="the album's url")
@@ -51,19 +56,29 @@ def main():
     parser.add_argument('-d', '--download', help="The path storing the ablum",
                         default="Downloads")
 
-    album_tasks = []
+    urls = []
+    deferreds = []
     args = parser.parse_args()
     agent = prepareNetwork()
 
     if args.url:
-        album_tasks.append(processULR(agent, args.url, args.download))
+        urls.append(args.url)
 
     if args.file:
         with open(args.file, 'r') as f:
             for i in f:
-                album_tasks.append(processULR(agent, i.strip(), args.download))
+                urls.append(i.strip())
 
-    deferreds = DeferredList(album_tasks, consumeErrors=True)
+    album_tasks = processULRs(agent, urls, args.download)
+
+    coop = task.Cooperator()
+
+    for i in range(0,1):
+        d = coop.coiterate(album_tasks)
+        deferreds.append(d)
+
+
+    deferreds = DeferredList(deferreds, consumeErrors=True)
     deferreds.addCallback(cbShutdown)
 
     reactor.run()
